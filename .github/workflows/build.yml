@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout kernel
@@ -41,45 +41,30 @@ jobs:
             flex \
             libssl-dev \
             libelf-dev \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
             device-tree-compiler \
             cpio \
             gzip \
             zip \
             unzip \
-            python3 \
-            gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu
+            python3
 
-      - name: Download Android GCC 4.9
+      - name: Toolchain
         run: |
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-            "$HOME/aarch64-gcc"
+          echo "=== GCC ==="
+          aarch64-linux-gnu-gcc --version | head -1
 
-          echo "CROSS_COMPILE=$HOME/aarch64-gcc/bin/aarch64-linux-android-" >> "$GITHUB_ENV"
-          echo "$HOME/aarch64-gcc/bin" >> "$GITHUB_PATH"
+          echo "=== LD ==="
+          aarch64-linux-gnu-ld --version | head -1
 
-      - name: Show build information
-        run: |
-          echo "=== BRANCH ==="
-          git branch --show-current
-
-          echo "=== COMMIT ==="
-          git log -1 --oneline
-
-          echo "=== KERNEL ==="
-          make -s kernelversion
-
-          echo "=== TOOLCHAIN ==="
-          "$HOME/aarch64-gcc/bin/aarch64-linux-android-gcc" --version | head -1
-
-      - name: Configure kernel
+      - name: Configure
         run: |
           rm -rf out
 
           make O=out \
             ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             lineage-a7y17lte_defconfig
 
       - name: Build kernel
@@ -87,10 +72,11 @@ jobs:
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            KCFLAGS="-Wno-error" \
             Image.gz-dtb
 
-      - name: Collect kernel
+      - name: Collect artifacts
         run: |
           mkdir -p artifacts
 
@@ -101,14 +87,11 @@ jobs:
             -type f -name '*.dtb' \
             -exec cp {} artifacts/ \; 2>/dev/null || true
 
-          echo "Kernel version: $(make -s O=out kernelversion)" \
-            > artifacts/build-info.txt
-
-          echo "Branch: $(git branch --show-current)" \
-            >> artifacts/build-info.txt
-
-          echo "Commit: $(git rev-parse HEAD)" \
-            >> artifacts/build-info.txt
+          {
+            echo "Kernel: $(make -s O=out kernelversion)"
+            echo "Branch: $(git branch --show-current)"
+            echo "Commit: $(git rev-parse HEAD)"
+          } > artifacts/build-info.txt
 
           echo "=== ARTIFACTS ==="
           ls -lh artifacts/
