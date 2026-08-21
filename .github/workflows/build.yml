@@ -10,7 +10,7 @@ on:
         options:
           - lineage-20
           - lineage-21
-        default: lineage-21
+        default: lineage-20
 
   push:
     branches:
@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout kernel
@@ -41,14 +41,23 @@ jobs:
             flex \
             libssl-dev \
             libelf-dev \
-            gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
             device-tree-compiler \
             cpio \
             gzip \
             zip \
             unzip \
-            python3
+            python3 \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu
+
+      - name: Download Android GCC 4.9
+        run: |
+          git clone --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            "$HOME/aarch64-gcc"
+
+          echo "CROSS_COMPILE=$HOME/aarch64-gcc/bin/aarch64-linux-android-" >> "$GITHUB_ENV"
+          echo "$HOME/aarch64-gcc/bin" >> "$GITHUB_PATH"
 
       - name: Show build information
         run: |
@@ -62,16 +71,15 @@ jobs:
           make -s kernelversion
 
           echo "=== TOOLCHAIN ==="
-          aarch64-linux-gnu-gcc --version | head -1
+          "$HOME/aarch64-gcc/bin/aarch64-linux-android-gcc" --version | head -1
 
       - name: Configure kernel
         run: |
           rm -rf out
-          mkdir -p out
 
           make O=out \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$CROSS_COMPILE" \
             lineage-a7y17lte_defconfig
 
       - name: Build kernel
@@ -79,7 +87,7 @@ jobs:
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$CROSS_COMPILE" \
             Image.gz-dtb
 
       - name: Collect kernel
@@ -93,15 +101,14 @@ jobs:
             -type f -name '*.dtb' \
             -exec cp {} artifacts/ \; 2>/dev/null || true
 
-          {
-            echo "Kernel version: $(make -s O=out kernelversion)"
-            echo "Branch: $(git branch --show-current)"
-            echo "Commit: $(git rev-parse HEAD)"
-            echo "Commit short: $(git rev-parse --short HEAD)"
-            echo "Defconfig: lineage-a7y17lte_defconfig"
-            echo "Architecture: arm64"
-            echo "Compiler: $(aarch64-linux-gnu-gcc --version | head -1)"
-          } > artifacts/build-info.txt
+          echo "Kernel version: $(make -s O=out kernelversion)" \
+            > artifacts/build-info.txt
+
+          echo "Branch: $(git branch --show-current)" \
+            >> artifacts/build-info.txt
+
+          echo "Commit: $(git rev-parse HEAD)" \
+            >> artifacts/build-info.txt
 
           echo "=== ARTIFACTS ==="
           ls -lh artifacts/
