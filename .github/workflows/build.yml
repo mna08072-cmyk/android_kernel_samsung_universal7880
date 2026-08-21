@@ -1,0 +1,115 @@
+name: Build A7 Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Kernel branch"
+        required: true
+        type: choice
+        options:
+          - lineage-20
+          - lineage-21
+        default: lineage-21
+
+  push:
+    branches:
+      - lineage-20
+      - lineage-21
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            libssl-dev \
+            libelf-dev \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            device-tree-compiler \
+            cpio \
+            gzip \
+            zip \
+            unzip \
+            python3
+
+      - name: Show build information
+        run: |
+          echo "=== BRANCH ==="
+          git branch --show-current
+
+          echo "=== COMMIT ==="
+          git log -1 --oneline
+
+          echo "=== KERNEL ==="
+          make -s kernelversion
+
+          echo "=== TOOLCHAIN ==="
+          aarch64-linux-gnu-gcc --version | head -1
+
+      - name: Configure kernel
+        run: |
+          rm -rf out
+          mkdir -p out
+
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            lineage-a7y17lte_defconfig
+
+      - name: Build kernel
+        run: |
+          make -j"$(nproc)" \
+            O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            Image.gz-dtb
+
+      - name: Collect kernel
+        run: |
+          mkdir -p artifacts
+
+          cp out/arch/arm64/boot/Image.gz-dtb \
+            artifacts/Image.gz-dtb
+
+          find out/arch/arm64/boot/dts \
+            -type f -name '*.dtb' \
+            -exec cp {} artifacts/ \; 2>/dev/null || true
+
+          {
+            echo "Kernel version: $(make -s O=out kernelversion)"
+            echo "Branch: $(git branch --show-current)"
+            echo "Commit: $(git rev-parse HEAD)"
+            echo "Commit short: $(git rev-parse --short HEAD)"
+            echo "Defconfig: lineage-a7y17lte_defconfig"
+            echo "Architecture: arm64"
+            echo "Compiler: $(aarch64-linux-gnu-gcc --version | head -1)"
+          } > artifacts/build-info.txt
+
+          echo "=== ARTIFACTS ==="
+          ls -lh artifacts/
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
