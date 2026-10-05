@@ -10,12 +10,14 @@ on:
         options:
           - lineage-20
           - lineage-21
+          - ksu-susfs-v2.3.0-L21
         default: lineage-20
 
   push:
     branches:
       - lineage-20
       - lineage-21
+      - ksu-susfs-v2.3.0-L21
 
 permissions:
   contents: write
@@ -30,6 +32,11 @@ jobs:
         with:
           ref: ${{ inputs.branch || github.ref_name }}
           fetch-depth: 1
+          submodules: recursive
+
+      - name: Assert KSU submodule
+        run: |
+          test -f drivers/kernelsu/Kconfig || { echo "KSU submodule missing"; exit 1; }
 
       - name: Install dependencies
         run: |
