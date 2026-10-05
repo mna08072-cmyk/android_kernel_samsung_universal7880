@@ -38,6 +38,14 @@ jobs:
         run: |
           test -f drivers/kernelsu/Kconfig || { echo "KSU submodule missing"; exit 1; }
 
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ inputs.branch || github.ref_name }}-${{ hashFiles('Makefile', 'fs/susfs.c', 'fs/susfs_ksu_glue.c', 'drivers/kernelsu/**') }}
+          restore-keys: |
+            ccache-${{ inputs.branch || github.ref_name }}-
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -45,6 +53,7 @@ jobs:
             bc \
             bison \
             build-essential \
+            ccache \
             flex \
             libssl-dev \
             libelf-dev \
@@ -76,12 +85,19 @@ jobs:
 
       - name: Build kernel
         run: |
+          export CC="ccache aarch64-linux-gnu-gcc"
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+          ccache -z || true
+
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             KCFLAGS="-Wno-error" \
             Image.gz-dtb
+
+          ccache -s || true
 
       - name: Verify kernel image
         run: |
