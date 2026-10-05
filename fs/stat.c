@@ -18,6 +18,11 @@
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+#include <linux/susfs_def.h>
+#include <linux/susfs.h>
+#endif
+
 void generic_fillattr(struct inode *inode, struct kstat *stat)
 {
 	stat->dev = inode->i_sb->s_dev;
@@ -53,8 +58,35 @@ int vfs_getattr_nosec(struct path *path, struct kstat *stat)
 {
 	struct inode *inode = path->dentry->d_inode;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	/* jack49 v2.3.0 SUS_KSTAT adapted to 3.18: vfs_getattr_nosec takes
+	 * (path, stat) only — no request_mask/query_flags — and 3.18 struct
+	 * kstat has no result_mask field, so the mask is kept in a local and
+	 * passed to the spoof helper as the selector. Provider
+	 * susfs_is_inode_sus_kstat(inode, &is_fuse) (2-arg, Part-A) and
+	 * susfs_is_current_app_uid() gate the spoof; d_backing_inode()
+	 * exists on 3.18. FUSE_SUPER_MAGIC fallback comes from susfs_def.h. */
+	if (susfs_is_current_app_uid()) {
+		bool is_fuse = false;
+		if (susfs_is_inode_sus_kstat(d_backing_inode(path->dentry), &is_fuse)) {
+			u32 result_mask = is_fuse ? STATX_SUS_KSTAT_FUSE : STATX_SUS_KSTAT;
+			if (inode->i_op->getattr) {
+				int err = inode->i_op->getattr(path->mnt, path->dentry, stat);
+				if (!err)
+					susfs_sus_kstat_spoof_generic_fillattr(inode, stat, result_mask);
+				return err;
+			}
+			generic_fillattr(inode, stat);
+			susfs_sus_kstat_spoof_generic_fillattr(inode, stat, result_mask);
+			return 0;
+		}
+	}
 	if (inode->i_op->getattr)
 		return inode->i_op->getattr(path->mnt, path->dentry, stat);
+#else
+	if (inode->i_op->getattr)
+		return inode->i_op->getattr(path->mnt, path->dentry, stat);
+#endif
 
 	generic_fillattr(inode, stat);
 	return 0;

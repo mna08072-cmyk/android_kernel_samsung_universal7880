@@ -280,4 +280,85 @@ endif # NETWORK_FILESYSTEMS
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 
+menu "SUSFS filesystem hiding support"
+
+config KSU_SUSFS
+	bool "SUSFS filesystem hiding support"
+	default n
+	help
+	  Enable the SUSFS core (fs/susfs.c). All per-feature
+	  options below depend on this symbol. Kept default n so
+	  a green build never silently enables hiding.
+
+config KSU_SUSFS_SUS_PATH
+	bool "SUSFS hiding of suspicious paths"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Hide paths recorded via susfs_add_sus_path from
+	  pathname lookup, readdir and related call sites.
+
+config KSU_SUSFS_SUS_MOUNT
+	bool "SUSFS hiding of suspicious mounts"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Hide mounts recorded via susfs_add_sus_mount from
+	  /proc mounts, statfs and fdinfo outputs.
+
+config KSU_SUSFS_SUS_KSTAT
+	bool "SUSFS stat spoofing for hidden objects"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Spoof stat data for hidden paths and mounts so
+	  userspace stat sees the fake attributes.
+
+config KSU_SUSFS_SUS_MAP
+	bool "SUSFS hiding of suspicious memory maps"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Hide suspicious mappings from /proc/<pid>/maps output.
+
+config KSU_SUSFS_OPEN_REDIRECT
+	bool "SUSFS open redirection"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Redirect open of configured paths to substitute files.
+
+config KSU_SUSFS_SPOOF_UNAME
+	bool "SUSFS uname spoofing"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Report the fake release/version string set via
+	  susfs_set_uname instead of the real one.
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	bool "SUSFS cmdline/bootconfig spoofing"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Report the fake cmdline or bootconfig set via
+	  susfs_set_cmdline_or_bootconfig instead of real data.
+
+config KSU_SUSFS_ENABLE_LOG
+	bool "SUSFS runtime logging"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Enable susfs printk logging via susfs_enable_log.
+	  Keep off in production builds.
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	bool "SUSFS hiding of KSU/SUSFS symbols in kallsyms"
+	depends on KSU_SUSFS
+	default n
+	help
+	  Hide KSU and SUSFS symbols from /proc/kallsyms output.
+
+endmenu
+
 endmenu

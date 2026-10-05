@@ -13,6 +13,18 @@ obj-y :=	open.o read_write.o file_table.o super.o \
 		pnode.o splice.o sync.o utimes.o \
 		stack.o fs_struct.o statfs.o fs_pin.o
 
+obj-$(CONFIG_KSU_SUSFS) += susfs.o
+
+# KSU+SUSFS integration glue (susfs_ksu_sid/susfs_priv_app_sid,
+# susfs_is_current_ksu_domain(), is_ksu_transition()): needed whenever
+# SUSFS is on, and for the CONFIG_KSU hooks.c guard even when SUSFS is off.
+obj-$(CONFIG_KSU_SUSFS) += susfs_ksu_glue.o
+ifeq ($(CONFIG_KSU),y)
+ifneq ($(CONFIG_KSU_SUSFS),y)
+obj-y += susfs_ksu_glue.o
+endif
+endif
+
 ifeq ($(CONFIG_BLOCK),y)
 obj-y +=	buffer.o block_dev.o direct-io.o mpage.o
 else

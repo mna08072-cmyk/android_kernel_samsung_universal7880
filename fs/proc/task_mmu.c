@@ -18,6 +18,10 @@
 #include <asm/uaccess.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+#include <linux/susfs_def.h>
+extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+#endif
 
 void task_mem(struct seq_file *m, struct mm_struct *mm)
 {
@@ -327,6 +331,9 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 		dev = inode->i_sb->s_dev;
 		ino = inode->i_ino;
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
+#endif
 	}
 
 	/* We don't show the stack guard page in /proc/maps */
