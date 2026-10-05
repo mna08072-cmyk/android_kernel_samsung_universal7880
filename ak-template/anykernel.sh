@@ -1,23 +1,33 @@
-### AnyKernel3 Samsung Galaxy A7 2017 Exynos7880 (KSU+SUSFS)
+### AnyKernel3 Ramdisk Mod Script
+## osm0sis @ xda-developers
 
+### AnyKernel setup
+# global properties
 properties() { '
 kernel.string=A7 2017 KSU+SUSFS Kernel by TomKun
 do.devicecheck=0
 do.modules=0
-do.systemless=1
+do.systemless=0
 do.cleanup=1
 do.cleanuponabort=0
-device.name1=a7y17lte
-device.name2=a7y17ltekor
-device.name3=a720f
-'; }
+supported.versions=
+supported.patchlevels=
+'; } # end properties
 
-BLOCK=/dev/block/platform/13540000.dwmmc0/by-name/BOOT;
-IS_SLOT_DEVICE=0;
-RAMDISK_COMPRESSION=auto;
-PATCH_VBMETA_FLAG=auto;
+# shell variables
+block=boot;
+is_slot_device=auto;
+ramdisk_compression=auto;
+patch_vbmeta_flag=auto;
 
+## AnyKernel methods (DO NOT CHANGE)
+# import patching functions/variables - see for reference
 . tools/ak3-core.sh;
 
+## AnyKernel boot install
 dump_boot;
+
+vbmeta_disable_verification;
+
 write_boot;
+## end boot install
