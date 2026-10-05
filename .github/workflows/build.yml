@@ -83,12 +83,48 @@ jobs:
             KCFLAGS="-Wno-error" \
             Image.gz-dtb
 
+      - name: Verify kernel image
+        run: |
+          test -f out/arch/arm64/boot/Image.gz-dtb
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Verify KSU+SUSFS linked
+        run: |
+          nm out/fs/built-in.o | grep -q " T susfs_init$" || { echo "susfs_init missing in fs"; exit 1; }
+          nm out/drivers/kernelsu/built-in.o | grep -q " T apply_kernelsu_rules$" || { echo "KSU core missing"; exit 1; }
+          grep -qx "CONFIG_KSU=y" out/.config
+          grep -qx "CONFIG_KSU_SUSFS=y" out/.config
+          echo "KSU+SUSFS symbols verified"
+
+      - name: Prepare AnyKernel3
+        run: |
+          rm -rf anykernel
+
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+
+          cp ak-template/anykernel.sh anykernel/anykernel.sh
+
+          cp out/arch/arm64/boot/Image.gz-dtb \
+            anykernel/Image.gz-dtb
+
+          rm -rf anykernel/.git anykernel/.github
+
+          cd anykernel
+
+          zip -r9 \
+            ../A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip .
+
+          cd ..
+
       - name: Collect artifacts
         run: |
           mkdir -p artifacts
 
           cp out/arch/arm64/boot/Image.gz-dtb \
             artifacts/Image.gz-dtb
+
+          cp A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip \
+            artifacts/
 
           find out/arch/arm64/boot/dts \
             -type f -name '*.dtb' \
