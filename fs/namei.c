@@ -3461,7 +3461,7 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 			putname(fake_pathname);
 			return filp;
 		}
-		if (!IS_ERR(fake_pathname))
+		if (!IS_ERR_OR_NULL(fake_pathname))
 			putname(fake_pathname);
 	}
 #endif

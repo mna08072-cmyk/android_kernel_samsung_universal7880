@@ -22,6 +22,7 @@
 #include <linux/jump_label.h>
 #include <linux/version.h> // We need check kernel version.
 #include <linux/security.h>
+#include <linux/srcu.h>
 #include <linux/susfs.h>
 #ifndef DEFINE_STATIC_KEY_TRUE
 #define DEFINE_STATIC_KEY_TRUE(name) \
@@ -874,12 +875,12 @@ out_copy_to_user:
 	}
 }
 
-void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
+int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
 	unsigned seq;
 	char *buf = (char *)kmalloc(SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE, GFP_KERNEL);
 
 	if (!buf) {
-		return;
+		return -ENOMEM;
 	}
 	do {
 		seq = read_seqbegin(&susfs_fake_cmdline_or_bootconfig_seqlock);
@@ -887,6 +888,7 @@ void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
 	} while (read_seqretry(&susfs_fake_cmdline_or_bootconfig_seqlock, seq));
 	seq_puts(m, buf);
 	kfree(buf);
+	return 0;
 }
 #endif
 
