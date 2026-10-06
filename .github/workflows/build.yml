@@ -134,31 +134,12 @@ jobs:
 
       - name: Collect artifacts
         run: |
-          mkdir -p artifacts
-
-          cp out/arch/arm64/boot/Image \
-            artifacts/Image
-
-          cp A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip \
-            artifacts/
-
-          find out/arch/arm64/boot/dts \
-            -type f -name '*.dtb' \
-            -exec cp {} artifacts/ \; 2>/dev/null || true
-
-          {
-            echo "Kernel: $(make -s O=out kernelversion)"
-            echo "Branch: $(git branch --show-current)"
-            echo "Commit: $(git rev-parse HEAD)"
-          } > artifacts/build-info.txt
-
-          echo "=== ARTIFACTS ==="
-          ls -lh artifacts/
+          ls -lh A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}
-          path: artifacts/
+          name: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel
+          path: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip
           if-no-files-found: error
           retention-days: 30
