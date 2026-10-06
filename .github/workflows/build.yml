@@ -46,6 +46,12 @@ jobs:
           restore-keys: |
             ccache-${{ inputs.branch || github.ref_name }}-
 
+      - name: Install toolchain (AOSP GCC 4.9, matches known-good reference)
+        run: |
+          git clone -q --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 /opt/aosp-gcc-4.9
+          echo "/opt/aosp-gcc-4.9/bin" >> "$GITHUB_PATH"
+          /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc --version | head -1
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -80,12 +86,12 @@ jobs:
 
           make O=out \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE=/opt/aosp-gcc-4.9/bin/aarch64-linux-android- \
             lineage-a7y17lte_defconfig
 
       - name: Build kernel
         run: |
-          export CC="ccache aarch64-linux-gnu-gcc"
+          export CC="ccache /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc"
           export CCACHE_DIR="$HOME/.ccache"
           export CCACHE_MAXSIZE=2G
           ccache -z || true
@@ -93,8 +99,7 @@ jobs:
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="-Wno-error" \
+            CROSS_COMPILE=/opt/aosp-gcc-4.9/bin/aarch64-linux-android- \
             Image
 
           ccache -s || true
