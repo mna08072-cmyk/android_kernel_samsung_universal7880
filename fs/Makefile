@@ -13,7 +13,7 @@ obj-y :=	open.o read_write.o file_table.o super.o \
 		pnode.o splice.o sync.o utimes.o \
 		stack.o fs_struct.o statfs.o fs_pin.o
 
-obj-$(CONFIG_KSU_SUSFS) += susfs.o
+obj-$(CONFIG_KSU_SUSFS) += susfs.o susfs_supercall.o
 # GCC 4.9 (era-appropriate toolchain) warns -Wmissing-braces on the nested
 # initializers in susfs.c; modern GCC accepts them. Silence for this file
 # only — code untouched.

@@ -244,4 +244,9 @@ void susfs_start_sdcard_monitor_fn(void);
 /* susfs_init */
 void susfs_init(void);
 
+#ifdef CONFIG_KSU_SUSFS
+bool susfs_handle_supercall(int magic1, int magic2, unsigned int cmd,
+			    void __user **arg);
+#endif
+
 #endif

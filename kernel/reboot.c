@@ -299,6 +299,19 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
 		return -EPERM;
 
+	/* SUSFS v2 supercall (outside KSU submodule): consume before the
+	 * LINUX_REBOOT_MAGIC check below, which would reject 0xDEADBEEF. */
+#ifdef CONFIG_KSU_SUSFS
+	if (system_state == SYSTEM_RUNNING) {
+		extern bool susfs_handle_supercall(int magic1, int magic2,
+						   unsigned int cmd,
+						   void __user **arg);
+		if (susfs_handle_supercall(magic1, magic2, cmd,
+					   (void __user **)&arg))
+			return 0;
+	}
+#endif
+
 	/* For safety, we require "magic" arguments. */
 	if (magic1 != LINUX_REBOOT_MAGIC1 ||
 			(magic2 != LINUX_REBOOT_MAGIC2 &&
