@@ -12,6 +12,16 @@ on:
           - lineage-21
           - ksu-susfs-v2.3.0-L21
         default: lineage-20
+      ksu_ref:
+        description: "KernelSU ref (branch/tag/SHA; empty floats to master tip)"
+        required: false
+        type: string
+        default: ""
+      nomount_ref:
+        description: "NoMount ref (branch/tag/SHA; empty floats to master tip)"
+        required: false
+        type: string
+        default: ""
 
   push:
     branches:
@@ -38,12 +48,76 @@ jobs:
         run: |
           test -f drivers/kernelsu/Kconfig || { echo "KSU submodule missing"; exit 1; }
 
+      - name: Float KernelSU to tip (or ksu_ref)
+        run: |
+          set -eux
+          KSU_REF="${{ inputs.ksu_ref }}"
+          git -C KernelSU fetch -q origin master --depth=1
+          if [ -n "$KSU_REF" ]; then
+            git -C KernelSU fetch -q origin "$KSU_REF" --depth=1
+            git -C KernelSU checkout -q "$KSU_REF"
+          else
+            git -C KernelSU checkout -q FETCH_HEAD
+          fi
+          KSU_SHA="$(git -C KernelSU rev-parse HEAD)"
+          KSU_SHORT="$(git -C KernelSU rev-parse --short=8 HEAD)"
+          echo "KSU_SHA=$KSU_SHA" >> "$GITHUB_ENV"
+          echo "KSU_SHORT=$KSU_SHORT" >> "$GITHUB_ENV"
+          echo "KernelSU at $KSU_SHA ($KSU_SHORT)"
+          test -f drivers/kernelsu/Kconfig || { echo "KSU float broke drivers/kernelsu symlink"; exit 1; }
+
+      - name: Setup NoMount (ephemeral, never committed)
+        run: |
+          set -eux
+          NOMOUNT_REF="${{ inputs.nomount_ref }}"
+          rm -rf NoMount fs/nomount
+          if [ -n "$NOMOUNT_REF" ]; then
+            git clone -q https://github.com/maxsteeel/nomount.git NoMount
+            git -C NoMount fetch -q origin "$NOMOUNT_REF" --depth=1
+            git -C NoMount checkout -q "$NOMOUNT_REF"
+          else
+            git clone -q --depth=1 --branch master https://github.com/maxsteeel/nomount.git NoMount
+          fi
+          NOMOUNT_SHA="$(git -C NoMount rev-parse HEAD)"
+          NOMOUNT_SHORT="$(git -C NoMount rev-parse --short=8 HEAD)"
+          echo "NOMOUNT_SHA=$NOMOUNT_SHA" >> "$GITHUB_ENV"
+          echo "NOMOUNT_SHORT=$NOMOUNT_SHORT" >> "$GITHUB_ENV"
+          echo "NoMount at $NOMOUNT_SHA ($NOMOUNT_SHORT)"
+          ln -sfn ../NoMount/kernel/src fs/nomount
+          test -f fs/nomount/nomount.c || { echo "fs/nomount symlink broken"; exit 1; }
+          test -f fs/nomount/Kconfig || { echo "fs/nomount/Kconfig missing"; exit 1; }
+          if ! grep -qF 'obj-$(CONFIG_NOMOUNT)' fs/Makefile; then
+            printf '\nobj-$(CONFIG_NOMOUNT) += nomount/\n' >> fs/Makefile
+          fi
+          if ! grep -qF 'source "fs/nomount/Kconfig"' fs/Kconfig; then
+            awk '
+              /^endmenu/ { last_match = NR }
+              { lines[NR] = $0 }
+              END {
+                for (i = 1; i <= NR; i++) {
+                  if (i == last_match) print "source \"fs/nomount/Kconfig\""
+                  print lines[i]
+                }
+              }' fs/Kconfig > fs/Kconfig.tmp
+            mv fs/Kconfig.tmp fs/Kconfig
+          fi
+          command -v patch >/dev/null || { echo "patch(1) missing"; exit 1; }
+          for p in patches/nomount-3.18-*.patch; do
+            [ -e "$p" ] || continue
+            echo "Applying $p"
+            patch -p1 --forward < "$p"
+          done
+          test -L fs/nomount
+          grep -qF 'obj-$(CONFIG_NOMOUNT)' fs/Makefile
+          grep -qF 'source "fs/nomount/Kconfig"' fs/Kconfig
+
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ inputs.branch || github.ref_name }}-${{ hashFiles('Makefile', 'fs/susfs.c', 'fs/susfs_ksu_glue.c', 'drivers/kernelsu/**') }}
+          key: ccache-${{ inputs.branch || github.ref_name }}-ksu${{ env.KSU_SHORT }}-nm${{ env.NOMOUNT_SHORT }}-${{ hashFiles('Makefile', 'fs/susfs.c', 'fs/susfs_ksu_glue.c', 'fs/susfs_supercall.c', 'KernelSU/kernel/**', 'patches/**') }}
           restore-keys: |
+            ccache-${{ inputs.branch || github.ref_name }}-ksu${{ env.KSU_SHORT }}-nm${{ env.NOMOUNT_SHORT }}-
             ccache-${{ inputs.branch || github.ref_name }}-
 
       - name: Install toolchain (AOSP GCC 4.9, matches known-good reference)
@@ -68,6 +142,7 @@ jobs:
             device-tree-compiler \
             cpio \
             gzip \
+            patch \
             zip \
             unzip \
             python3
@@ -94,6 +169,11 @@ jobs:
           export CC="ccache /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc"
           export CCACHE_DIR="$HOME/.ccache"
           export CCACHE_MAXSIZE=2G
+          # Stock-like build identity: scripts/mkcompile_h falls back to
+          # whoami/hostname (runner@runnervmXXXX) baked into init/version.c
+          # linux_banner — override with Samsung stock-style values instead.
+          export KBUILD_BUILD_USER="dpi"
+          export KBUILD_BUILD_HOST="SWHE4614"
           ccache -z || true
 
           make -j"$(nproc)" \
@@ -116,6 +196,14 @@ jobs:
           grep -qx "CONFIG_KSU=y" out/.config
           grep -qx "CONFIG_KSU_SUSFS=y" out/.config
           echo "KSU+SUSFS symbols verified"
+          echo "KSU ${KSU_SHA:?KSU_SHA unset} (${KSU_SHORT:?KSU_SHORT unset})"
+          if grep -qx "CONFIG_NOMOUNT=y" out/.config; then
+            test -f out/fs/nomount/built-in.o || { echo "NoMount built-in.o missing"; exit 1; }
+            nm out/fs/nomount/built-in.o | grep -q " nomount_init$" || { echo "NoMount symbols missing"; exit 1; }
+            echo "NoMount symbols verified (${NOMOUNT_SHA:?NOMOUNT_SHA unset} / ${NOMOUNT_SHORT:?NOMOUNT_SHORT unset})"
+          else
+            echo "CONFIG_NOMOUNT not set; skipping NoMount symbol check"
+          fi
 
       - name: Prepare AnyKernel3
         run: |
@@ -130,21 +218,35 @@ jobs:
 
           rm -rf anykernel/.git anykernel/.github
 
+          cat > anykernel/versions.txt <<EOF
+          branch=${{ inputs.branch || github.ref_name }}
+          run=${{ github.run_number }}
+          ksu_sha=${KSU_SHA:?KSU_SHA unset}
+          ksu_short=${KSU_SHORT:?KSU_SHORT unset}
+          nomount_sha=${NOMOUNT_SHA:?NOMOUNT_SHA unset}
+          nomount_short=${NOMOUNT_SHORT:?NOMOUNT_SHORT unset}
+          EOF
+          cat anykernel/versions.txt
+
+          ZIP_NAME="A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-ksu${KSU_SHORT:?}-nm${NOMOUNT_SHORT:?}-AnyKernel.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+          echo "$ZIP_NAME"
+
           cd anykernel
 
           zip -r9 \
-            ../A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip .
+            "../$ZIP_NAME" .
 
           cd ..
 
       - name: Collect artifacts
         run: |
-          ls -lh A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip
+          ls -lh "${ZIP_NAME:?ZIP_NAME unset}"
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel
-          path: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-AnyKernel.zip
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
           if-no-files-found: error
           retention-days: 30

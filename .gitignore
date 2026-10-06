@@ -1,0 +1,4 @@
+# Ephemeral CI checkouts — never committed
+/NoMount/
+/NoMount-ephemeral/
+fs/nomount/
