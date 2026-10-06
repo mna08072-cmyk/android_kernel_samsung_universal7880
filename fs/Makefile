@@ -14,10 +14,10 @@ obj-y :=	open.o read_write.o file_table.o super.o \
 		stack.o fs_struct.o statfs.o fs_pin.o
 
 obj-$(CONFIG_KSU_SUSFS) += susfs.o
-# GCC 4.9 (era-appropriate toolchain) treats nested-brace initializers in
-# susfs.c as -Werror=missing-braces; modern GCC accepts them. Downgrade to
-# warning for this file only — code untouched.
-CFLAGS_susfs.o += -Wno-error=missing-braces
+# GCC 4.9 (era-appropriate toolchain) warns -Wmissing-braces on the nested
+# initializers in susfs.c; modern GCC accepts them. Silence for this file
+# only — code untouched.
+CFLAGS_susfs.o += -Wno-missing-braces
 
 # KSU+SUSFS integration glue (susfs_ksu_sid/susfs_priv_app_sid,
 # susfs_is_current_ksu_domain(), is_ksu_transition()): needed whenever
