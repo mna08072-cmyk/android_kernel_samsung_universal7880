@@ -47,6 +47,10 @@ struct task_security_struct {
  * on fs/'s include path); signature verified against this tree. */
 int security_context_to_sid(const char *scontext, u32 scontext_len,
 			    u32 *sid, gfp_t gfp);
+/* security/selinux/include/avc_ss.h: set to 1 once the SELinux policy is
+ * loaded (services.c:2076). Before that no task can be in the KSU domain
+ * and any SID lookup would sleep/fail, so bail out early. */
+extern int ss_initialized;
 
 extern bool is_ksu_domain(void);
 
@@ -61,6 +65,10 @@ static void susfs_glue_resolve_sids(void)
 	int rc;
 
 	if (susfs_glue_sids_resolved)
+		return;
+	/* Policy not loaded yet: no task can be in the KSU domain, and
+	 * SID lookups would sleep/fail (early mount path). Fail closed. */
+	if (!ss_initialized)
 		return;
 	if (in_interrupt() || in_atomic())
 		return;
@@ -82,6 +90,9 @@ bool susfs_is_current_ksu_domain(void)
 {
 	bool ret;
 
+	/* Fast fail-closed: before policy load no domain check is valid. */
+	if (!ss_initialized)
+		return false;
 	susfs_glue_resolve_sids();
 	ret = is_ksu_domain();
 	return ret;
@@ -92,6 +103,9 @@ bool is_ksu_transition(const struct task_security_struct *old_tsec,
 {
 	susfs_glue_resolve_sids();
 	if (!susfs_ksu_sid)
+		return false;
+	/* Pre-policy execs (e.g. early /init) never touch the KSU domain. */
+	if (!ss_initialized)
 		return false;
 	return old_tsec->sid == susfs_ksu_sid ||
 	       new_tsec->sid == susfs_ksu_sid;
