@@ -1422,18 +1422,9 @@ static struct dentry *__lookup_hash(struct qstr *name,
 #endif
 
 	dentry = lookup_dcache(name, base, flags, &need_lookup);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	/* jack49 returns the cached sus-path dentry as NULL above, so a
-	 * non-NULL dentry here is either clean or an error */
-	if (dentry) {
-		return dentry;
-	}
-#else
 	if (!need_lookup)
 		return dentry;
-#endif
 
-	dentry = d_alloc(base, name);
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 retry:
 #endif
