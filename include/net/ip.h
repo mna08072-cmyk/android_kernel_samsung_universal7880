@@ -275,6 +275,11 @@ int ip_decrease_ttl(struct iphdr *iph)
 	return --iph->ttl;
 }
 
+static inline int ip_mtu_locked(const struct dst_entry *dst)
+{
+	return dst_metric_locked(dst, RTAX_MTU);
+}
+
 static inline
 int ip_dont_fragment(struct sock *sk, struct dst_entry *dst)
 {
