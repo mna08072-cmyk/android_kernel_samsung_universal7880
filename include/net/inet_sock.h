@@ -200,6 +200,18 @@ struct inet_sock {
 #define IPCORK_OPT	1	/* ip-options has been held in ipcork.opt */
 #define IPCORK_ALLFRAG	2	/* always fragment (for ipv6 for now) */
 
+/* SYNACK messages might be attached to request sockets.
+ * Some places want to reach the listener in this case.
+ */
+static inline struct sock *skb_to_full_sk(const struct sk_buff *skb)
+{
+	struct sock *sk = skb->sk;
+
+	if (sk && sk->sk_state == TCP_NEW_SYN_RECV)
+		sk = inet_reqsk(sk)->rsk_listener;
+	return sk;
+}
+
 static inline struct inet_sock *inet_sk(const struct sock *sk)
 {
 	return (struct inet_sock *)sk;
@@ -234,12 +246,14 @@ static inline unsigned int __inet_ehashfn(const __be32 laddr,
 			    initval);
 }
 
-static inline struct request_sock *inet_reqsk_alloc(struct request_sock_ops *ops)
+static inline struct request_sock *
+inet_reqsk_alloc(const struct request_sock_ops *ops, struct sock *sk_listener)
 {
-	struct request_sock *req = reqsk_alloc(ops);
-	struct inet_request_sock *ireq = inet_rsk(req);
+	struct request_sock *req = reqsk_alloc(ops, sk_listener);
 
-	if (req != NULL) {
+	if (req) {
+		struct inet_request_sock *ireq = inet_rsk(req);
+
 		kmemcheck_annotate_bitfield(ireq, flags);
 		ireq->opt = NULL;
 	}

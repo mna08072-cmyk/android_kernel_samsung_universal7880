@@ -65,8 +65,13 @@ static inline unsigned int tcp_optlen(const struct sk_buff *skb)
 
 /* TCP Fast Open Cookie as stored in memory */
 struct tcp_fastopen_cookie {
+	union {
+		u8	val[TCP_FASTOPEN_COOKIE_MAX];
+#if IS_ENABLED(CONFIG_IPV6)
+		struct in6_addr addr;
+#endif
+	};
 	s8	len;
-	u8	val[TCP_FASTOPEN_COOKIE_MAX];
 };
 
 /* This defines a selective acknowledgement block. */
@@ -481,5 +486,8 @@ static inline int fastopen_init_queue(struct sock *sk, int backlog)
 	queue->fastopenq->max_qlen = backlog;
 	return 0;
 }
+
+int tcp_skb_shift(struct sk_buff *to, struct sk_buff *from, int pcount,
+		  int shiftlen);
 
 #endif	/* _LINUX_TCP_H */

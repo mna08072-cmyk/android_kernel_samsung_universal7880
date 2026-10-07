@@ -1595,6 +1595,8 @@ struct task_struct {
 #endif
 	struct list_head pi_state_list;
 	struct futex_pi_state *pi_state_cache;
+	struct mutex futex_exit_mutex;
+	unsigned int futex_state;
 #endif
 #ifdef CONFIG_PERF_EVENTS
 	struct perf_event_context *perf_event_ctxp[perf_nr_task_contexts];
@@ -1985,7 +1987,6 @@ extern int task_free_unregister(struct notifier_block *n);
  * Per process flags
  */
 #define PF_EXITING	0x00000004	/* getting shut down */
-#define PF_EXITPIDONE	0x00000008	/* pi exit done on shut down */
 #define PF_VCPU		0x00000010	/* I'm a virtual CPU */
 #define PF_WQ_WORKER	0x00000020	/* I'm a workqueue worker */
 #define PF_FORKNOEXEC	0x00000040	/* forked but didn't exec */
@@ -2514,7 +2515,8 @@ extern struct mm_struct *get_task_mm(struct task_struct *task);
  */
 extern struct mm_struct *mm_access(struct task_struct *task, unsigned int mode);
 /* Remove the current tasks stale references to the old mm_struct */
-extern void mm_release(struct task_struct *, struct mm_struct *);
+extern void exit_mm_release(struct task_struct *, struct mm_struct *);
+extern void exec_mm_release(struct task_struct *, struct mm_struct *);
 
 extern int copy_thread(unsigned long, unsigned long, unsigned long,
 			struct task_struct *);

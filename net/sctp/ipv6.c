@@ -267,9 +267,11 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 	final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
 	rcu_read_unlock();
 
-	dst = ip6_dst_lookup_flow(sk, fl6, final_p);
-	if (!asoc || saddr)
+	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
+	if (!asoc || saddr) {
+		t->dst = dst;
 		goto out;
+	}
 
 	bp = &asoc->base.bind_addr;
 	scope = sctp_scope(daddr);
@@ -320,7 +322,7 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 		fl6->saddr = laddr->a.v6.sin6_addr;
 		fl6->fl6_sport = laddr->a.v6.sin6_port;
 		final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
-		bdst = ip6_dst_lookup_flow(sk, fl6, final_p);
+		bdst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
 
 		if (IS_ERR(bdst))
 			continue;
@@ -352,9 +354,10 @@ out:
 
 		rt = (struct rt6_info *)dst;
 		t->dst = dst;
-		t->dst_cookie = rt->rt6i_node ? rt->rt6i_node->fn_sernum : 0;
-		pr_debug("rt6_dst:%pI6 rt6_src:%pI6\n", &rt->rt6i_dst.addr,
-			 &fl6->saddr);
+		t->dst_cookie = rt6_get_cookie(rt);
+		pr_debug("rt6_dst:%pI6/%d rt6_src:%pI6\n",
+			 &rt->rt6i_dst.addr, rt->rt6i_dst.plen,
+			 &fl->u.ip6.saddr);
 	} else {
 		t->dst = NULL;
 

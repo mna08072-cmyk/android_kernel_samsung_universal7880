@@ -231,6 +231,12 @@ static int ghes_estatus_pool_expand(unsigned long len)
 			return ret;
 	}
 
+	/*
+	 * New allocation must be visible in all pgd before it can be found by
+	 * an NMI allocating from the pool.
+	 */
+	vmalloc_sync_mappings();
+
 	return 0;
 }
 
