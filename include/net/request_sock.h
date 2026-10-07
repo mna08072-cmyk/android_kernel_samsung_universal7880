@@ -49,6 +49,8 @@ int inet_rtx_syn_ack(struct sock *parent, struct request_sock *req);
  */
 struct request_sock {
 	struct sock_common		__req_common;
+#define rsk_refcnt			__req_common.skc_refcnt
+
 	struct request_sock		*dl_next;
 	struct sock			*rsk_listener;
 	u16				mss;
@@ -95,6 +97,12 @@ static inline void reqsk_free(struct request_sock *req)
 	__reqsk_free(req);
 	if (req->rsk_listener)
 		sock_put(req->rsk_listener);
+}
+
+static inline void reqsk_put(struct request_sock *req)
+{
+	if (atomic_dec_and_test(&req->rsk_refcnt))
+		reqsk_free(req);
 }
 
 extern int sysctl_max_syn_backlog;
