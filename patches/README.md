@@ -22,24 +22,17 @@ at `24743360` (14 commits past the v2.3.0 bump, all triaged:
 
 ## 2. NoMount 3.18 compat
 
-- `nomount-3.18-01-compat.patch` — 3.18 shims (iterate/hash/xattr/actor/
-  iov_iter/C89) for NoMount tip `c7f63e3f`:
+- `nomount-3.18.patch` — full 3.18 port for NoMount tip `c7f63e3f`
+  (single file; was 01/02/03, merged byte-identical):
+  shims (iterate/hash/xattr/actor/iov_iter/C89) + symlink delegation
+  (follow_link/put_link/readlink to real inode, put_link NULL-guarded)
+  + classic `.read/.write` via `new_sync_read/write` (NOT `do_sync_*`)
+  + `mutex_init(&nomount_mutex)` in `nomount_init()`. mmap untouched.
   1. `git clone --depth 1 https://github.com/maxsteeel/nomount.git NoMount`
   2. `ln -sfn ../NoMount/kernel/src fs/nomount`
   3. wire `obj-$(CONFIG_NOMOUNT)` + Kconfig source (see CI step
      "Setup NoMount" in `.github/workflows/build.yml`)
-  4. `patch -p1 --forward < patches/nomount-3.18-*.patch`
-- `nomount-3.18-02-fontfix.patch` — 3.18 symlink + classic read path
-  (font modules): virtual symlinks delegate follow_link/put_link/readlink
-  to the real inode (put_link NULL-guarded); `.read/.write` wired to
-  `new_sync_read/write` through the iter fallback (NOT `do_sync_*`: no
-  aio_read slot -> oops) + single-segment ITER_IOVEC guard. Applies after
-  01 (glob order `01` then `02`). mmap untouched.
-- `nomount-3.18-03-mutexinit.patch` — init `nomount_mutex` in
-  `nomount_init()`. Patch 01 left it a BSS object with no initializer
-  (count==0); first add-rule `mutex_lock` oopsed in
-  `__mutex_lock_slowpath` (NULL deref). Only crashes when a module is
-  installed (no rules -> mutex never touched). Applies after 02.
+  4. `patch -p1 --forward < patches/nomount-3.18.patch`
 - `nomount-3.18-defconfig.fragment` — `CONFIG_NOMOUNT=y`
   (single-option subsystem; upstream default is y).
 
