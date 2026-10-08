@@ -29,6 +29,12 @@ at `24743360` (14 commits past the v2.3.0 bump, all triaged:
   3. wire `obj-$(CONFIG_NOMOUNT)` + Kconfig source (see CI step
      "Setup NoMount" in `.github/workflows/build.yml`)
   4. `patch -p1 --forward < patches/nomount-3.18-*.patch`
+- `nomount-3.18-02-fontfix.patch` — 3.18 symlink + classic read path
+  (font modules): virtual symlinks delegate follow_link/put_link/readlink
+  to the real inode (put_link NULL-guarded); `.read/.write` wired to
+  `new_sync_read/write` through the iter fallback (NOT `do_sync_*`: no
+  aio_read slot -> oops) + single-segment ITER_IOVEC guard. Applies after
+  01 (glob order `01` then `02`). mmap untouched.
 - `nomount-3.18-defconfig.fragment` — `CONFIG_NOMOUNT=y`
   (single-option subsystem; upstream default is y).
 
