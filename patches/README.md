@@ -22,7 +22,7 @@ at `24743360` (14 commits past the v2.3.0 bump, all triaged:
 
 ## 2. NoMount 3.18 compat
 
-- `nomount-3.18.patch` — full 3.18 port for NoMount tip `c7f63e3f`
+- `nomount-3.18-combined.patch` — full 3.18 port for NoMount tip `c7f63e3f`
   (single file; was 01/02/03, merged byte-identical):
   shims (iterate/hash/xattr/actor/iov_iter/C89) + symlink delegation
   (follow_link/put_link/readlink to real inode, put_link NULL-guarded)
@@ -32,7 +32,7 @@ at `24743360` (14 commits past the v2.3.0 bump, all triaged:
   2. `ln -sfn ../NoMount/kernel/src fs/nomount`
   3. wire `obj-$(CONFIG_NOMOUNT)` + Kconfig source (see CI step
      "Setup NoMount" in `.github/workflows/build.yml`)
-  4. `patch -p1 --forward < patches/nomount-3.18.patch`
+  4. `patch -p1 --forward < patches/nomount-3.18-combined.patch`
 - `nomount-3.18-defconfig.fragment` — `CONFIG_NOMOUNT=y`
   (single-option subsystem; upstream default is y).
 
