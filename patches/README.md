@@ -35,6 +35,11 @@ at `24743360` (14 commits past the v2.3.0 bump, all triaged:
   `new_sync_read/write` through the iter fallback (NOT `do_sync_*`: no
   aio_read slot -> oops) + single-segment ITER_IOVEC guard. Applies after
   01 (glob order `01` then `02`). mmap untouched.
+- `nomount-3.18-03-mutexinit.patch` — init `nomount_mutex` in
+  `nomount_init()`. Patch 01 left it a BSS object with no initializer
+  (count==0); first add-rule `mutex_lock` oopsed in
+  `__mutex_lock_slowpath` (NULL deref). Only crashes when a module is
+  installed (no rules -> mutex never touched). Applies after 02.
 - `nomount-3.18-defconfig.fragment` — `CONFIG_NOMOUNT=y`
   (single-option subsystem; upstream default is y).
 
