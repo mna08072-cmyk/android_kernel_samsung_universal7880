@@ -2,34 +2,53 @@ name: Build A7 Kernel
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Kernel branch"
-        required: true
-        type: choice
-        options:
-          - lineage-20
-          - lineage-21
-        default: lineage-20
 
   push:
     branches:
       - lineage-20
       - lineage-21
+    paths-ignore:
+      - "**/*.md"
+      - "Documentation/**"
 
 permissions:
-  contents: write
+  contents: read
+
+# A newer push/dispatch on the same branch cancels the older in-flight build
+# instead of queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - name: Checkout kernel
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.branch || github.ref_name }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 1
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ github.ref_name }}-${{ hashFiles('Makefile', 'arch/arm64/configs/lineage-a7y17lte_defconfig') }}
+          restore-keys: |
+            ccache-${{ github.ref_name }}-
+
+      - name: Install toolchain (AOSP GCC 4.9, era-matched for 3.18)
+        run: |
+          set -eux
+          for i in 1 2 3; do
+            rm -rf /opt/aosp-gcc-4.9
+            git clone -q --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 /opt/aosp-gcc-4.9 && break || { [ "$i" -eq 3 ] && exit 1; sleep 10; }
+          done
+          echo "/opt/aosp-gcc-4.9/bin" >> "$GITHUB_PATH"
+          /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc --version | head -1
 
       - name: Install dependencies
         run: |
@@ -38,11 +57,10 @@ jobs:
             bc \
             bison \
             build-essential \
+            ccache \
             flex \
             libssl-dev \
             libelf-dev \
-            gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
             device-tree-compiler \
             cpio \
             gzip \
@@ -53,53 +71,90 @@ jobs:
       - name: Toolchain
         run: |
           echo "=== GCC ==="
-          aarch64-linux-gnu-gcc --version | head -1
-
-          echo "=== LD ==="
-          aarch64-linux-gnu-ld --version | head -1
+          /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc --version | head -1
 
       - name: Configure
         run: |
+          set -eux
           rm -rf out
 
           make O=out \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE=/opt/aosp-gcc-4.9/bin/aarch64-linux-android- \
             lineage-a7y17lte_defconfig
 
       - name: Build kernel
         run: |
+          export CC="ccache /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc"
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+          # Samsung stock-style build identity instead of runner@runnervmXXXX.
+          export KBUILD_BUILD_USER="dpi"
+          export KBUILD_BUILD_HOST="SWHE4614"
+          ccache -z || true
+
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="-Wno-error" \
-            Image.gz-dtb
+            CROSS_COMPILE=/opt/aosp-gcc-4.9/bin/aarch64-linux-android- \
+            Image
+
+          ccache -s || true
+
+      - name: Verify kernel image
+        run: |
+          test -f out/arch/arm64/boot/Image
+          ls -lh out/arch/arm64/boot/Image
+
+      - name: Prepare AnyKernel3
+        run: |
+          rm -rf anykernel
+
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+
+          cp ak-template/anykernel.sh anykernel/anykernel.sh
+
+          cp out/arch/arm64/boot/Image \
+            anykernel/Image
+
+          rm -rf anykernel/.git anykernel/.github
+
+          cat > anykernel/versions.txt <<EOF
+          branch=${{ github.ref_name }}
+          run=${{ github.run_number }}
+          sha=${{ github.sha }}
+          EOF
+          cat anykernel/versions.txt
+
+          ZIP_NAME="A7-${{ github.ref_name }}-${{ github.run_number }}-AnyKernel.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+          echo "$ZIP_NAME"
+
+          cd anykernel
+
+          zip -r9 \
+            "../$ZIP_NAME" .
+
+          cd ..
+
+          IMG_SIZE="$(stat -c '%s' anykernel/Image)"
+          {
+            echo "## A7 Kernel Build"
+            echo ""
+            echo "- Branch: ${{ github.ref_name }}"
+            echo "- Run: ${{ github.run_number }} (head ${{ github.sha }})"
+            echo "- Image: ${IMG_SIZE} bytes"
+            echo "- Artifact: ${ZIP_NAME:?}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect artifacts
         run: |
-          mkdir -p artifacts
-
-          cp out/arch/arm64/boot/Image.gz-dtb \
-            artifacts/Image.gz-dtb
-
-          find out/arch/arm64/boot/dts \
-            -type f -name '*.dtb' \
-            -exec cp {} artifacts/ \; 2>/dev/null || true
-
-          {
-            echo "Kernel: $(make -s O=out kernelversion)"
-            echo "Branch: $(git branch --show-current)"
-            echo "Commit: $(git rev-parse HEAD)"
-          } > artifacts/build-info.txt
-
-          echo "=== ARTIFACTS ==="
-          ls -lh artifacts/
+          ls -lh "${ZIP_NAME:?ZIP_NAME unset}"
 
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}
-          path: artifacts/
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
           if-no-files-found: error
           retention-days: 30
