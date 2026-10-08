@@ -3,15 +3,6 @@ name: Build A7 Kernel
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: "Kernel branch"
-        required: true
-        type: choice
-        options:
-          - lineage-20
-          - lineage-21
-          - ksu-susfs-v2.3.0-L21
-        default: lineage-20
       ksu_ref:
         description: "KernelSU ref (branch/tag/SHA; empty floats to master tip)"
         required: false
@@ -55,7 +46,7 @@ jobs:
       - name: Checkout kernel
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.branch || github.ref_name }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 1
           submodules: recursive
 
@@ -137,10 +128,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ inputs.branch || github.ref_name }}-ksu${{ env.KSU_SHORT }}-nm${{ env.NOMOUNT_SHORT }}-${{ hashFiles('Makefile', 'fs/susfs.c', 'fs/susfs_ksu_glue.c', 'fs/susfs_supercall.c', 'KernelSU/kernel/**', 'patches/**') }}
+          key: ccache-${{ github.ref_name }}-ksu${{ env.KSU_SHORT }}-nm${{ env.NOMOUNT_SHORT }}-${{ hashFiles('Makefile', 'fs/susfs.c', 'fs/susfs_ksu_glue.c', 'fs/susfs_supercall.c', 'KernelSU/kernel/**', 'patches/**') }}
           restore-keys: |
-            ccache-${{ inputs.branch || github.ref_name }}-ksu${{ env.KSU_SHORT }}-nm${{ env.NOMOUNT_SHORT }}-
-            ccache-${{ inputs.branch || github.ref_name }}-
+            ccache-${{ github.ref_name }}-ksu${{ env.KSU_SHORT }}-nm${{ env.NOMOUNT_SHORT }}-
+            ccache-${{ github.ref_name }}-
 
       - name: Install toolchain (AOSP GCC 4.9, matches known-good reference)
         run: |
@@ -264,7 +255,7 @@ jobs:
           fi
 
           cat > anykernel/versions.txt <<EOF
-          branch=${{ inputs.branch || github.ref_name }}
+          branch=${{ github.ref_name }}
           run=${{ github.run_number }}
           ksu_sha=${KSU_SHA:?KSU_SHA unset}
           ksu_short=${KSU_SHORT:?KSU_SHORT unset}
@@ -272,7 +263,7 @@ jobs:
           EOF
           cat anykernel/versions.txt
 
-          ZIP_NAME="A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-ksu${KSU_SHORT:?}-nm${NOMOUNT_SHORT:-off}-AnyKernel.zip"
+          ZIP_NAME="A7-${{ github.ref_name }}-${{ github.run_number }}-ksu${KSU_SHORT:?}-nm${NOMOUNT_SHORT:-off}-AnyKernel.zip"
           echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
           echo "$ZIP_NAME"
 
@@ -287,7 +278,7 @@ jobs:
           {
             echo "## A7 Kernel Build"
             echo ""
-            echo "- Branch: ${{ inputs.branch || github.ref_name }}"
+            echo "- Branch: ${{ github.ref_name }}"
             echo "- Run: ${{ github.run_number }} (head ${{ github.sha }})"
             echo "- KernelSU: ${KSU_SHA:?} (${KSU_SHORT:?})"
             echo "- NoMount: ${NOMOUNT_STATUS}"
