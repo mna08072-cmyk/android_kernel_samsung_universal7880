@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ""
+      use_nomount:
+        description: "Build with NoMount VFS hooks (off = plain KSU+SUSFS)"
+        required: false
+        type: boolean
+        default: true
       nomount_ref:
         description: "NoMount ref (branch/tag/SHA; empty floats to master tip)"
         required: false
@@ -28,13 +33,23 @@ on:
       - lineage-20
       - lineage-21
       - ksu-susfs-v2.3.0-L21
+    paths-ignore:
+      - "**/*.md"
+      - "Documentation/**"
 
 permissions:
-  contents: write
+  contents: read
+
+# A newer push/dispatch on the same branch cancels the older in-flight build
+# instead of queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - name: Checkout kernel
@@ -67,16 +82,23 @@ jobs:
           test -f drivers/kernelsu/Kconfig || { echo "KSU float broke drivers/kernelsu symlink"; exit 1; }
 
       - name: Setup NoMount (ephemeral, never committed)
+        if: ${{ github.event_name == 'push' || inputs.use_nomount }}
         run: |
           set -eux
           NOMOUNT_REF="${{ inputs.nomount_ref }}"
           rm -rf NoMount fs/nomount
           if [ -n "$NOMOUNT_REF" ]; then
-            git clone -q https://github.com/maxsteeel/nomount.git NoMount
+            for i in 1 2 3; do
+              rm -rf NoMount
+              git clone -q https://github.com/maxsteeel/nomount.git NoMount && break || { [ "$i" -eq 3 ] && exit 1; sleep 10; }
+            done
             git -C NoMount fetch -q origin "$NOMOUNT_REF" --depth=1
             git -C NoMount checkout -q "$NOMOUNT_REF"
           else
-            git clone -q --depth=1 --branch master https://github.com/maxsteeel/nomount.git NoMount
+            for i in 1 2 3; do
+              rm -rf NoMount
+              git clone -q --depth=1 --branch master https://github.com/maxsteeel/nomount.git NoMount && break || { [ "$i" -eq 3 ] && exit 1; sleep 10; }
+            done
           fi
           NOMOUNT_SHA="$(git -C NoMount rev-parse HEAD)"
           NOMOUNT_SHORT="$(git -C NoMount rev-parse --short=8 HEAD)"
@@ -122,7 +144,11 @@ jobs:
 
       - name: Install toolchain (AOSP GCC 4.9, matches known-good reference)
         run: |
-          git clone -q --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 /opt/aosp-gcc-4.9
+          set -eux
+          for i in 1 2 3; do
+            rm -rf /opt/aosp-gcc-4.9
+            git clone -q --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 /opt/aosp-gcc-4.9 && break || { [ "$i" -eq 3 ] && exit 1; sleep 10; }
+          done
           echo "/opt/aosp-gcc-4.9/bin" >> "$GITHUB_PATH"
           /opt/aosp-gcc-4.9/bin/aarch64-linux-android-gcc --version | head -1
 
@@ -157,12 +183,25 @@ jobs:
 
       - name: Configure
         run: |
+          set -eux
           rm -rf out
 
           make O=out \
             ARCH=arm64 \
             CROSS_COMPILE=/opt/aosp-gcc-4.9/bin/aarch64-linux-android- \
             lineage-a7y17lte_defconfig
+
+          if [ -n "${NOMOUNT_SHA:-}" ]; then
+            echo "NoMount enabled at ${NOMOUNT_SHA}; CONFIG_NOMOUNT must survive defconfig"
+            grep -qx "CONFIG_NOMOUNT=y" out/.config || { echo "CONFIG_NOMOUNT lost after defconfig"; exit 1; }
+          else
+            echo "NoMount disabled by toggle; ensuring CONFIG_NOMOUNT stays off"
+            if grep -q "CONFIG_NOMOUNT" out/.config; then
+              ./scripts/config --file out/.config --disable CONFIG_NOMOUNT
+              make O=out ARCH=arm64 olddefconfig
+            fi
+            if grep -qx "CONFIG_NOMOUNT=y" out/.config; then echo "CONFIG_NOMOUNT unexpectedly on"; exit 1; fi
+          fi
 
       - name: Build kernel
         run: |
@@ -203,6 +242,7 @@ jobs:
             echo "NoMount symbols verified (${NOMOUNT_SHA:?NOMOUNT_SHA unset} / ${NOMOUNT_SHORT:?NOMOUNT_SHORT unset})"
           else
             echo "CONFIG_NOMOUNT not set; skipping NoMount symbol check"
+            test ! -e fs/nomount || { echo "stray fs/nomount with CONFIG_NOMOUNT off"; exit 1; }
           fi
 
       - name: Prepare AnyKernel3
@@ -218,17 +258,21 @@ jobs:
 
           rm -rf anykernel/.git anykernel/.github
 
+          NOMOUNT_STATUS="disabled"
+          if [ -n "${NOMOUNT_SHA:-}" ]; then
+            NOMOUNT_STATUS="${NOMOUNT_SHA:?NOMOUNT_SHA unset} (${NOMOUNT_SHORT:?NOMOUNT_SHORT unset})"
+          fi
+
           cat > anykernel/versions.txt <<EOF
           branch=${{ inputs.branch || github.ref_name }}
           run=${{ github.run_number }}
           ksu_sha=${KSU_SHA:?KSU_SHA unset}
           ksu_short=${KSU_SHORT:?KSU_SHORT unset}
-          nomount_sha=${NOMOUNT_SHA:?NOMOUNT_SHA unset}
-          nomount_short=${NOMOUNT_SHORT:?NOMOUNT_SHORT unset}
+          nomount=${NOMOUNT_STATUS}
           EOF
           cat anykernel/versions.txt
 
-          ZIP_NAME="A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-ksu${KSU_SHORT:?}-nm${NOMOUNT_SHORT:?}-AnyKernel.zip"
+          ZIP_NAME="A7-${{ inputs.branch || github.ref_name }}-${{ github.run_number }}-ksu${KSU_SHORT:?}-nm${NOMOUNT_SHORT:-off}-AnyKernel.zip"
           echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
           echo "$ZIP_NAME"
 
@@ -238,6 +282,18 @@ jobs:
             "../$ZIP_NAME" .
 
           cd ..
+
+          IMG_SIZE="$(stat -c '%s' anykernel/Image)"
+          {
+            echo "## A7 Kernel Build"
+            echo ""
+            echo "- Branch: ${{ inputs.branch || github.ref_name }}"
+            echo "- Run: ${{ github.run_number }} (head ${{ github.sha }})"
+            echo "- KernelSU: ${KSU_SHA:?} (${KSU_SHORT:?})"
+            echo "- NoMount: ${NOMOUNT_STATUS}"
+            echo "- Image: ${IMG_SIZE} bytes"
+            echo "- Artifact: ${ZIP_NAME:?}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect artifacts
         run: |
